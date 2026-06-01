@@ -774,7 +774,7 @@
         <div id="notesView" class="view-panel p-4 hidden">
             <div class="d-flex justify-content-between align-items-center mb-3"><h4 class="text-warning text-dark fw-bold mb-0">📝 Yönetici Not Defteri</h4><button class="btn btn-outline-danger fw-bold" onclick="showHome()">Anasayfaya Dön</button></div>
             <div class="row">
-                <div class="col-md-4"><div class="card p-3 bg-light border shadow-sm"><h6 class="fw-bold">Yeni Not Ekle</h6><input type="text" id="noteTitle" class="form-control mb-2 border-secondary" placeholder="Not Başlığı"><div class="note-toolbar"><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('bold')"><b>K</b></button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('italic')"><i>İ</i></button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('underline')"><u>A</u></button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('insertUnorderedList')">• Liste</button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('insertOrderedList')">1. Liste</button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('justifyLeft')">Sol</button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('justifyCenter')">Orta</button></div><div id="noteContent" class="note-editor mb-3" contenteditable="true" data-placeholder="Not detaylarını buraya yazınız..."></div><button class="btn btn-warning w-100 fw-bold shadow-sm" onclick="saveNote()">Kaydet</button></div></div>
+                <div class="col-md-4"><div class="card p-3 bg-light border shadow-sm"><h6 class="fw-bold">Yeni Not Ekle</h6><input type="text" id="noteTitle" class="form-control mb-2 border-secondary" placeholder="Not Başlığı"><div class="note-toolbar"><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('bold')"><b>K</b></button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('italic')"><i>İ</i></button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('underline')"><u>A</u></button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('insertUnorderedList')">• Liste</button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('insertOrderedList')">1. Liste</button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('justifyLeft')">Sol</button><button type="button" class="btn btn-sm btn-outline-dark" onclick="formatNote('justifyCenter')">Orta</button></div><div id="noteContent" class="note-editor mb-3" contenteditable="true" data-placeholder="Not detaylarını buraya yazınız..."></div><button id="noteSaveBtn" class="btn btn-warning w-100 fw-bold shadow-sm" onclick="saveNote()">Kaydet</button><button id="noteCancelEditBtn" class="btn btn-outline-secondary w-100 fw-bold shadow-sm mt-2 hidden" onclick="cancelNoteEdit()">Düzenlemeyi İptal Et</button></div></div>
                 <div class="col-md-8"><div class="list-group shadow-sm" id="notesList" style="max-height: 500px; overflow-y: auto;"></div></div>
             </div>
         </div>
@@ -4075,26 +4075,87 @@ function formatNote(command) {
 function escapeNoteHtml(text) {
     return (text || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
+let editingNoteIndex = null;
+function setNoteFormMode(isEditing) {
+    const title = document.querySelector('#notesView h6.fw-bold');
+    const saveBtn = document.getElementById('noteSaveBtn');
+    const cancelBtn = document.getElementById('noteCancelEditBtn');
+    if(title) title.textContent = isEditing ? 'Notu Düzenle' : 'Yeni Not Ekle';
+    if(saveBtn) saveBtn.textContent = isEditing ? 'Güncelle' : 'Kaydet';
+    if(cancelBtn) cancelBtn.classList.toggle('hidden', !isEditing);
+}
+function clearNoteForm() {
+    const titleInput = document.getElementById('noteTitle');
+    const editor = document.getElementById('noteContent');
+    if(titleInput) titleInput.value = '';
+    if(editor) editor.innerHTML = '';
+}
+function cancelNoteEdit() {
+    editingNoteIndex = null;
+    clearNoteForm();
+    setNoteFormMode(false);
+}
 function saveNote() {
     let t = document.getElementById('noteTitle').value.trim();
     let editor = document.getElementById('noteContent');
     let c = (editor?.innerHTML || '').trim();
     let plain = (editor?.innerText || '').trim();
     if(!t || !plain) return alert('Lütfen not başlığı ve not içeriği giriniz.');
-    let n = JSON.parse(localStorage.getItem('tbmmNotes') || '[]');
-    n.unshift({title:t, content:c, rich:true, date:new Date().toLocaleString('tr-TR')});
+    let n = [];
+    try { n = JSON.parse(localStorage.getItem('tbmmNotes') || '[]'); } catch(e) { n = []; }
+    if(!Array.isArray(n)) n = [];
+    const now = new Date().toLocaleString('tr-TR');
+    if(editingNoteIndex !== null && n[editingNoteIndex]) {
+        n[editingNoteIndex] = Object.assign({}, n[editingNoteIndex], {
+            title: t,
+            content: c,
+            rich: true,
+            updatedAt: now
+        });
+    } else {
+        n.unshift({title:t, content:c, rich:true, date:now});
+    }
     localStorage.setItem('tbmmNotes', JSON.stringify(n));
-    document.getElementById('noteTitle').value = '';
-    if(editor) editor.innerHTML = '';
+    cancelNoteEdit();
+    renderNotes();
+}
+function editNote(i) {
+    let notes = [];
+    try { notes = JSON.parse(localStorage.getItem('tbmmNotes') || '[]'); } catch(e) { notes = []; }
+    if(!Array.isArray(notes) || !notes[i]) return alert('Düzenlenecek not bulunamadı.');
+    const note = notes[i];
+    const titleInput = document.getElementById('noteTitle');
+    const editor = document.getElementById('noteContent');
+    if(titleInput) titleInput.value = note.title || '';
+    if(editor) {
+        editor.innerHTML = note.rich ? (note.content || '') : escapeNoteHtml(note.content || '').replace(/\n/g, '<br>');
+        editor.focus();
+    }
+    editingNoteIndex = i;
+    setNoteFormMode(true);
+    document.getElementById('notesView')?.scrollIntoView({behavior:'smooth', block:'start'});
+}
+function deleteNote(i) {
+    let notes = [];
+    try { notes = JSON.parse(localStorage.getItem('tbmmNotes') || '[]'); } catch(e) { notes = []; }
+    if(!Array.isArray(notes) || !notes[i]) return;
+    if(!confirm('Bu not silinsin mi?')) return;
+    notes.splice(i, 1);
+    localStorage.setItem('tbmmNotes', JSON.stringify(notes));
+    if(editingNoteIndex === i) cancelNoteEdit();
+    else if(editingNoteIndex !== null && editingNoteIndex > i) editingNoteIndex--;
     renderNotes();
 }
 function renderNotes() {
     let list = document.getElementById('notesList');
     if(!list) return;
-    let notes = JSON.parse(localStorage.getItem('tbmmNotes') || '[]');
+    let notes = [];
+    try { notes = JSON.parse(localStorage.getItem('tbmmNotes') || '[]'); } catch(e) { notes = []; }
+    if(!Array.isArray(notes)) notes = [];
     list.innerHTML = notes.length ? notes.map((n,i) => {
         let content = n.rich ? (n.content || '') : `<div>${escapeNoteHtml(n.content || '').replace(/\n/g,'<br>')}</div>`;
-        return `<div class="list-group-item list-group-item-action mb-2 border rounded shadow-sm"><div class="d-flex w-100 justify-content-between gap-2"><h6 class="mb-1 fw-bold text-dark">${escapeNoteHtml(n.title)}</h6><small class="text-muted text-nowrap">${n.date}</small></div><div class="note-content-render mb-2">${content}</div><div class="d-flex gap-2"><button class="btn btn-sm btn-outline-dark fw-bold" onclick="printNote(${i})">🖨️ Hızlı Çıktı Al</button><button class="btn btn-sm btn-link text-danger p-0" onclick="deleteNote(${i})">Sil</button></div></div>`;
+        let dateInfo = n.updatedAt ? `${escapeNoteHtml(n.date || '-')}<br><span class="text-primary">Güncellendi: ${escapeNoteHtml(n.updatedAt)}</span>` : escapeNoteHtml(n.date || '-');
+        return `<div class="list-group-item list-group-item-action mb-2 border rounded shadow-sm"><div class="d-flex w-100 justify-content-between gap-2"><h6 class="mb-1 fw-bold text-dark">${escapeNoteHtml(n.title)}</h6><small class="text-muted text-nowrap text-end">${dateInfo}</small></div><div class="note-content-render mb-2">${content}</div><div class="d-flex gap-2 flex-wrap"><button class="btn btn-sm btn-outline-dark fw-bold" onclick="printNote(${i})">🖨️ Hızlı Çıktı Al</button><button class="btn btn-sm btn-outline-primary fw-bold" onclick="editNote(${i})">Düzenle</button><button class="btn btn-sm btn-link text-danger p-0 fw-bold" onclick="deleteNote(${i})">Sil</button></div></div>`;
     }).join('') : '<div class="text-center text-muted p-4 bg-white border rounded">Henüz not bulunmuyor.</div>';
 }
 function printNote(i) {
@@ -4405,6 +4466,12 @@ function clearAllRosterArchive() {
    - Duran AKKAYA imza alanı ve gg.aa.yyyy biçiminde otomatik tarih eklenir. */
 (function(){
     const CORP_SIGNATORY_NAME = 'Duran AKKAYA';
+    const CORP_DEPARTMENT_NAME = 'Destek Hizmetleri Başkanlığı';
+
+    function corpLogoSrc() {
+        const img = document.querySelector('#loginScreen .official-logo-shell img, .official-logo-shell img');
+        return img ? img.src : '';
+    }
 
     function corpEscapeHtml(value) {
         return (value ?? '').toString().replace(/[&<>"']/g, ch => ({
@@ -4435,10 +4502,13 @@ function clearAllRosterArchive() {
 
     function corpDocumentHtml(title, subtitle, bodyHtml, orientation) {
         const minHeight = orientation === 'portrait' ? '252mm' : '170mm';
+        const logoSrc = corpLogoSrc();
         return `<div class="corporate-print-fit" style="--corp-min-height:${minHeight};">
             <div class="corporate-print-document">
                 <div class="corporate-print-header">
+                    ${logoSrc ? `<div class="corporate-print-logo-wrap"><img class="corporate-print-logo" src="${logoSrc}" alt="TBMM Logo"></div>` : ''}
                     <div class="corporate-print-kurum">TÜRKİYE BÜYÜK MİLLET MECLİSİ</div>
+                    <div class="corporate-print-department">${corpEscapeHtml(CORP_DEPARTMENT_NAME)}</div>
                     <div class="corporate-print-unit">Çay Ocakları</div>
                     <div class="corporate-print-title">${corpEscapeHtml(title)}</div>
                     ${subtitle ? `<div class="corporate-print-subtitle">${corpEscapeHtml(subtitle)}</div>` : ''}
@@ -4490,9 +4560,12 @@ function clearAllRosterArchive() {
     ${areaSelector} .corporate-print-fit { display:block !important; width:100% !important; max-width:100% !important; zoom: var(--corporate-print-scale, 1); }
     ${areaSelector} .corporate-print-document { min-height:var(--corp-min-height, 170mm); display:flex !important; flex-direction:column !important; box-sizing:border-box !important; color:#000 !important; font-family:'Times New Roman', Times, serif !important; font-size:12pt !important; line-height:1.18 !important; }
     ${areaSelector} .corporate-print-header { text-align:center !important; margin:0 0 5mm 0 !important; padding:0 0 3mm 0 !important; border-bottom:2px solid #000 !important; page-break-inside:avoid !important; break-inside:avoid !important; }
-    ${areaSelector} .corporate-print-kurum { font-size:14pt !important; font-weight:700 !important; letter-spacing:.4px !important; margin-bottom:1mm !important; }
-    ${areaSelector} .corporate-print-unit { font-size:12pt !important; font-weight:700 !important; margin-bottom:2mm !important; }
-    ${areaSelector} .corporate-print-title { font-size:16pt !important; font-weight:700 !important; text-transform:uppercase !important; margin-bottom:1mm !important; }
+    ${areaSelector} .corporate-print-logo-wrap { text-align:center !important; margin:0 0 2mm 0 !important; padding:0 !important; }
+    ${areaSelector} .corporate-print-logo { width:18mm !important; height:18mm !important; object-fit:contain !important; display:inline-block !important; }
+    ${areaSelector} .corporate-print-kurum { font-size:17pt !important; font-weight:700 !important; letter-spacing:.4px !important; margin-bottom:1mm !important; }
+    ${areaSelector} .corporate-print-department { font-size:13pt !important; font-weight:700 !important; margin-bottom:.8mm !important; }
+    ${areaSelector} .corporate-print-unit { font-size:12pt !important; font-weight:700 !important; margin-bottom:1.5mm !important; }
+    ${areaSelector} .corporate-print-title { font-size:14pt !important; font-weight:700 !important; text-transform:uppercase !important; margin-bottom:.8mm !important; }
     ${areaSelector} .corporate-print-subtitle { font-size:12pt !important; font-weight:700 !important; }
     ${areaSelector} .corporate-print-body { flex:0 1 auto !important; }
     ${areaSelector} .table-responsive, ${areaSelector} .a4-preview-scroll { overflow:visible !important; width:100% !important; padding:0 !important; margin:0 !important; border:0 !important; background:#fff !important; }
